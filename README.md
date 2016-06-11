@@ -1,12 +1,12 @@
 # Skjarinn EPG parser
-> OZ EPG parser for Skjarinn.
+> OZ EPG parser for Skjarinn
 
 ## Setup on OS X:
 
 ```shell
 brew install python3
 pip3 install virtualenv
-cd path/to/365_parser
+cd path/to/skjarinn-parser
 virtualenv venv
 source ./venv/bin/activate
 pip3 install -r requirements.txt

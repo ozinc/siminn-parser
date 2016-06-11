@@ -34,53 +34,42 @@ log.addHandler(handler)
 
 CoreObject = namedtuple('CoreObject', ['type', 'properties'])
 
-# Helper functions
-
-def format(timestamp):
-    return timestamp.format('YYYY-MM-DDTHH:mm:ss.SSS') + 'Z'
-
-# EPG importer
-
-def import_epg():
-    log.info('importing EPG for channel: skjarinn')
-    stdin = sys.stdin.buffer.read()
-    soup = bs.BeautifulSoup(stdin, 'xml', from_encoding='iso-8859-1')
-    events = soup.findAll('event')
-    log.info('found %d scheduled items', len(events))
-
-    # Fetch the primary stream for this channel
-    channel_id = api.channel_id
+def get_primary_stream(station, channel_id):
     stream = api.fetch_primary_stream_for_channel(channel_id)
     if stream == None:
         log.info('no stream found for {0} (id: {1})'.format(station, channel_id))
         sys.exit(-1)
-    stream_id = stream['id']
     log.info('found streamId {0} for channel {1} (id: {2})'.format(
-        stream_id, station, api.channel_id))
+        stream['id'], station, channel_id))
+    return stream['id']
+
+def import_epg():
+    station = 'siminn' # TODO: Make configurable
+    channel_id = api.channel_id
+
+    log.info('importing EPG for channel: {0}'.format(station))
+    stdin = sys.stdin.buffer.read()
+    soup = bs.BeautifulSoup(stdin, 'xml')
+    events = soup.findAll('event')
+    log.info('found %d scheduled items', len(events))
+
+    stream_id = get_primary_stream(station, channel_id)
 
     # Start processing the EPG items
     for event in events:
-        # If its older than today; ignore.
-        # TODO: that!
 
-        serie_id = event.recordid_efni.get('value')
         collection_id = None
         content_type = 'episode'
         has_episode_no = True
 
-        # Parse the time strings
-        start_time = arrow.get(event.get('starttime'))
+        # Parse start time and check if its older than today, if so; discard
+        start_time = arrow.get(event.get('start-time'))
+        now = arrow.utcnow()
+        if (start_time - now).days > 
+        sys.exit(-1)
 
-        # Check if the event is associated with a collection
-        if event.category:
-            if event.category.get('value') == 'FRE':
-                content_type = 'news'
-                has_episode_no = False
-            elif event.category.get('value') in MOVIE_CATEGORIES:
-                content_type = 'movie'
-                has_episode_no = False
-            elif event.category.get('value') == 'MSE':
-                content_type = 'movie'
+        # TODO: Add some heuristic to figure out whether this is a single
+        #       or an episode.
 
         if content_type != 'movie':
             # Determine the name of the collection
@@ -202,6 +191,11 @@ def import_epg():
         slot = CoreObject('slot', slot_props)
         upsert_slot(slot)
 
+# Helper functions
+
+def format(timestamp):
+    return timestamp.format('YYYY-MM-DDTHH:mm:ss.SSS') + 'Z'
+
 def upsert_slot(slot, **kwargs):
     return upsert_external_object(slot, **kwargs)
 
@@ -257,6 +251,6 @@ if __name__ == '__main__':
     if args.v:
         log.setLevel(logging.DEBUG)
         log.info('verbose mode on')
+
+    # Lets do this!
     import_epg()
-    else:
-        raise Exception('unsupported operation')
