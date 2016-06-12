@@ -8,6 +8,7 @@ import re
 import logging
 import argparse
 import json
+from slugify import slugify
 from collections import namedtuple
 from html.parser import HTMLParser
 h = HTMLParser()
@@ -43,6 +44,9 @@ def get_primary_stream(station, channel_id):
         stream['id'], station, channel_id))
     return stream['id']
 
+def is_zero_or_empty(s):
+    return s == None or s == '' or s == '0'
+
 def import_epg():
     station = 'siminn' # TODO: Make configurable
     channel_id = api.channel_id
@@ -60,106 +64,90 @@ def import_epg():
 
         collection_id = None
         content_type = 'episode'
-        has_episode_no = True
 
-        # Parse start time and check if its older than today, if so; discard
+        # Parse start time and check if its older than a day, discard if so
         start_time = arrow.get(event.get('start-time'))
         now = arrow.utcnow()
-        if (start_time - now).days > 
-        sys.exit(-1)
+        if (start_time - now).days > 1:
+            sys.exit(-1)
 
-        # TODO: Add some heuristic to figure out whether this is a single
-        #       or an episode.
+        # Parse the episode metadata
+        episode_info = event.episode
+        #print(event.episode)
+        if all(list(map(lambda s: is_zero_or_empty(event.episode[s]),
+            ['number', 'number-of-episodes', 'series-number']))):
+            content_type = 'movie'
 
-        if content_type != 'movie':
+        # Collection handling
+        if content_type == 'episode':
             # Determine the name of the collection
             collection_name = event.title.text
 
-            # Use the org_title (original title) field as collection name, if present.
-            if event.org_title.text and event.org_title.text.strip():
-                collection_name = event.org_title.text
-
-            # Populate the collection object.
-            collectionProps = {
-                'externalId': serie_id,
-                'type': 'series', # TODO: You shouldn't need to do this.
+            # Upsert the collection
+            collection_props = {
+                'externalId': 'siminn-' + slugify(collection_name),
+                'type': 'series',
                 'name': collection_name
             }
+            print('upserting collection:', collection_props)
+            #collection = CoreObject('collection', collection_props);
+            #collection_id = upsert_collection(collection)
 
-            collection = CoreObject('collection', collectionProps);
-            collection_id = upsert_collection(collection)
+        # Video handling
+        external_video_id = 'siminn-' + event.get('event-id')
+        external_video = api.fetch_video_by_external_id(external_video_id)
 
-        external_id = event.reference_number.get('value')
-        external_video = api.fetch_video_by_external_id(external_id)
-
-        # Populate the metadata object.
+        # Collect metadata
         metadata = {}
+        if external_video is not None:
+            metadata = external_video.get('metadata', {})
+
         if len(event.description.text) > 0:
-            metadata['description'] = h.unescape(event.description.text)
+            metadata['description'] = event.description.text
 
-        # Populate the video object
-        if has_episode_no:
-            metadata['episodeNumber'] = int(event.series.get('episode'))
-            if int(event.series.get('series_number')) > 0:
-                metadata['seasonNumber'] = int(event.series.get('series_number'))
+        if content_type == 'episode':
+            if not is_zero_or_empty(event.episode['series-number']):
+                metadata['episodeNumber'] = int(event.episode['number'])
+            if not is_zero_or_empty(event.episode['series-number']):
+                metadata['seasonNumber'] = int(event.episode['series-number'])
 
-        if content_type == 'news':
-            metadata['date'] = start_time.isoformat()
+        print('video metadata:', metadata)
 
-        # Playback regions
-        playback_countries = DEFAULT_PLAYBACK_COUNTRIES
-        if event.recordid_efni.get('value') in GLOBAL_EFNI:
-            playback_countries = ['GLOBAL']
-        if event.category.get('value') in GLOBAL_CATEGORIES:
-            playback_countries = ['GLOBAL']
+        # TODO: Playback regions
+        # TODO: Availability
 
-        # Moment control
-        allow_moments = True
-        if station in NO_MOMENTS_STATIONS:
-            allow_moments = False
-        elif event.recordid_efni.get('value') in NO_MOMENTS_EFNI:
-            allow_moments = False
+        video_props = {
+            'sourceType': 'stream',
+            'contentType': content_type,
+            'title': event.title.text,
+            'externalId': external_video_id,
+            'collectionId': collection_id,
+            'published': True,
+            'metadata': metadata
+        }
 
-        availability_time = int(event.netdagar.get('value'))
-
-        video_props = {}
-        video_props['sourceType'] = 'stream'
-        video_props['contentType'] = content_type
-        video_props['title'] = h.unescape(event.title.text)
-        video_props['externalId'] = event.reference_number.get('value')
-        if content_type == 'movie' and station in STATION_TO_MOVIE_COLLECTION:
-            video_props['collectionId'] = STATION_TO_MOVIE_COLLECTION[station]
-        else:
-            video_props['collectionId'] = collection_id
-        video_props['published'] = True
-        video_props['allowMoments'] = allow_moments
-        video_props['playbackCountries'] = playback_countries
-
-        if availability_time:
-            video_props['playableUntil'] = format(start_time.replace(days=availability_time))
-
-        if event.recordid_efni.get('value') in SERIES_UNPUBLISHED:
-            video_props['published'] = False
-
-        # Only attach the metadata field if we have some metadata.
-        if len(metadata) > 0:
-            video_props['metadata'] = metadata
-
-        video = CoreObject('video', video_props)
+        #if availability_time:
+        #    video_props['playableUntil'] = format(start_time.replace(days=availability_time))
+        #if event.recordid_efni.get('value') in SERIES_UNPUBLISHED:
+        #    video_props['published'] = False
 
         # Create/update the video:
-        video_id = upsert_video(video)
+        print('video:', video_props)
+        # video = CoreObject('video', video_props)
+        # video_id = upsert_video(video)
+        video_id = 'banani'
 
-        # Fetch external slot
-        ext_slot_id = event.recid_syning.get('value')
-        external_slot = api.fetch_slot_by_external_id(ext_slot_id)
-        slot_props = {}
+        # Video handling
+        external_slot_id = 'siminn-' + event.get('internal')
+        external_slot = api.fetch_slot_by_external_id(external_slot_id)
+
         slot_metadata = {}
         if external_slot is not None:
             slot_metadata = external_slot.get('metadata', {})
 
         # Determine the slot type:
         slot_type = 'regular'
+        '''
         if event.live.get('value') == 'true' and serie_id not in NOT_REALLY_LIVE:
             slot_type = 'live'
             log.info('slot type is LIVE')
@@ -174,22 +162,22 @@ def import_epg():
 
         log.info('estimated duration {} => {}'.format(
             event.get('duration'), estimated_duration))
+        '''
 
-        slot_props['type']       = slot_type
-        slot_props['startTime']  = format(start_time)
-        slot_props['metadata']   = slot_metadata
-        slot_props['externalId'] = ext_slot_id
+        slot_props = {
+            'type': slot_type,
+            'startTime': format(start_time),
+            'metadata': slot_metadata,
+            'externalId': external_slot_id,
+            'videoId': video_id,
+            'streamId': stream_id
+        }
 
-        # End time left empty as we want this slot to last until the next.
-        slot_props['videoId']    = video_id
-
-        # Associate the slot with the primary stream for this channel
-        slot_props['streamId']   = stream_id
-
+        print('slot:', slot_props)
         # Create a slot to schedule the video to be played
         # at the specified time
-        slot = CoreObject('slot', slot_props)
-        upsert_slot(slot)
+        #slot = CoreObject('slot', slot_props)
+        #upsert_slot(slot)
 
 # Helper functions
 

@@ -2,3 +2,4 @@ arrow==0.6.0
 beautifulsoup4==4.4.0
 lxml==3.4.4
 oz-python-client==0.6
+python-slugify==1.2.0
