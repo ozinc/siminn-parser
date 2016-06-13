@@ -61,33 +61,30 @@ def import_epg():
 
     # Start processing the EPG items
     for event in events:
-
         collection_id = None
         content_type = 'episode'
 
         # Parse start time and check if its older than a day, discard if so
         start_time = arrow.get(event.get('start-time'))
         now = arrow.utcnow()
-        if (start_time - now).days > 1:
-            sys.exit(-1)
+        if (start_time - now).days < -1:
+            continue
 
         # Parse the episode metadata
         episode_info = event.episode
-        #print(event.episode)
         if all(list(map(lambda s: is_zero_or_empty(event.episode[s]),
             ['number', 'number-of-episodes', 'series-number']))):
             content_type = 'movie'
 
         # Collection handling
         if content_type == 'episode':
-            # Determine the name of the collection
-            collection_name = event.title.text
-
             # Upsert the collection
+            collection_name = event.title.text
             collection_props = {
                 'externalId': 'siminn-' + slugify(collection_name),
                 'type': 'series',
-                'name': collection_name
+                'name': collection_name,
+                'description': event.description.text
             }
             print('upserting collection:', collection_props)
             #collection = CoreObject('collection', collection_props);
@@ -102,16 +99,17 @@ def import_epg():
         if external_video is not None:
             metadata = external_video.get('metadata', {})
 
-        if len(event.description.text) > 0:
-            metadata['description'] = event.description.text
+        # The "short_description" field is used for the description specific
+        # to an episode - if present.
+        short_description = getattr(event, 'short-description').text
+        if len(short_description) > 0:
+            metadata['description'] = short_description
 
         if content_type == 'episode':
             if not is_zero_or_empty(event.episode['series-number']):
                 metadata['episodeNumber'] = int(event.episode['number'])
             if not is_zero_or_empty(event.episode['series-number']):
                 metadata['seasonNumber'] = int(event.episode['series-number'])
-
-        print('video metadata:', metadata)
 
         # TODO: Playback regions
         # TODO: Availability
@@ -125,11 +123,6 @@ def import_epg():
             'published': True,
             'metadata': metadata
         }
-
-        #if availability_time:
-        #    video_props['playableUntil'] = format(start_time.replace(days=availability_time))
-        #if event.recordid_efni.get('value') in SERIES_UNPUBLISHED:
-        #    video_props['published'] = False
 
         # Create/update the video:
         print('video:', video_props)
@@ -147,22 +140,11 @@ def import_epg():
 
         # Determine the slot type:
         slot_type = 'regular'
-        '''
-        if event.live.get('value') == 'true' and serie_id not in NOT_REALLY_LIVE:
+        if event.live.text == 'Yes':
             slot_type = 'live'
-            log.info('slot type is LIVE')
-        elif (event.premier.get('value') == 'true' and
-             (metadata.get('episodeNumber') == 1 or content_type == 'movie')):
+        elif content_type == 'episode' and 'episodeNumber' in metadata \
+            and metadata['episodeNumber'] == 1:
             slot_type = 'premiere'
-            log.info('slot type is PREMIERE')
-
-        tokens = event.get('duration').split(':')
-        estimated_duration = int(tokens[0]) * 3600 + int(tokens[1]) * 60;
-        slot_metadata['estimatedDuration'] = estimated_duration
-
-        log.info('estimated duration {} => {}'.format(
-            event.get('duration'), estimated_duration))
-        '''
 
         slot_props = {
             'type': slot_type,
