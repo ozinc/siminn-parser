@@ -87,8 +87,8 @@ def import_epg():
                 'description': event.description.text
             }
             print('upserting collection:', collection_props)
-            #collection = CoreObject('collection', collection_props);
-            #collection_id = upsert_collection(collection)
+            collection = CoreObject('collection', collection_props);
+            collection_id = upsert_collection(collection)
 
         # Video handling
         external_video_id = 'siminn-' + event.get('event-id')
@@ -125,10 +125,9 @@ def import_epg():
         }
 
         # Create/update the video:
-        print('video:', video_props)
-        # video = CoreObject('video', video_props)
-        # video_id = upsert_video(video)
-        video_id = 'banani'
+        print('upserting video:', video_props)
+        video = CoreObject('video', video_props)
+        video_id = upsert_video(video)
 
         # Video handling
         external_slot_id = 'siminn-' + event.get('internal')
@@ -155,11 +154,9 @@ def import_epg():
             'streamId': stream_id
         }
 
-        print('slot:', slot_props)
-        # Create a slot to schedule the video to be played
-        # at the specified time
-        #slot = CoreObject('slot', slot_props)
-        #upsert_slot(slot)
+        print('upserting slot:', slot_props)
+        slot = CoreObject('slot', slot_props)
+        upsert_slot(slot)
 
 # Helper functions
 
