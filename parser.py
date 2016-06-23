@@ -47,8 +47,7 @@ def get_primary_stream(station, channel_id):
 def is_zero_or_empty(s):
     return s == None or s == '' or s == '0'
 
-def import_epg():
-    station = 'siminn' # TODO: Make configurable
+def import_epg(station):
     channel_id = api.channel_id
 
     log.info('importing EPG for channel: {0}'.format(station))
@@ -211,8 +210,13 @@ def upsert_external_object(obj,  **kwargs):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='EPG importer for Skjarinn')
     parser.add_argument('-v', help='turn on verbose mode', action='store_true')
+    parser.add_argument('type', help='epg or asrun. Currently only epg is supported.')
     parser.add_argument('channel', help='The ID of the channel being imported to')
+    parser.add_argument('service', help='The name of the channel to fetch')
     args = parser.parse_args()
+    if args.type != 'epg':
+        print('wrong service type.')
+        os.exit(1)
 
     api.channel_id = args.channel
     if args.v:
@@ -220,4 +224,4 @@ if __name__ == '__main__':
         log.info('verbose mode on')
 
     # Lets do this!
-    import_epg()
+    import_epg(args.service)
